@@ -1,0 +1,50 @@
+name: Deploy Flutter Web to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - run: flutter pub get
+      - run: flutter build web --release --base-href /${{ github.event.repository.name }}/
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./build/web
+
+      # --- الخطوة الجديدة والمهمة ---
+      # هذه الخطوة تعمل فقط إذا فشلت الخطوات السابقة
+      - name: Notify n8n of Failure
+        if: failure()
+        run: |
+          curl -X POST "${{ secrets.N8N_DEBUG_WEBHOOK_URL }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+                "repository_full_name": "${{ github.repository }}",
+                "run_id": "${{ github.run_id }}",
+                "head_sha": "${{ github.sha }}"
+              }'
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
